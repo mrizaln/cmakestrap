@@ -1,7 +1,7 @@
 from importlib import resources as imp_resources
 from pathlib import Path
 
-from . import cmake, conan, cpp
+from . import cmake, conan, cpp, git
 
 
 class CMake:
@@ -92,3 +92,9 @@ class Cpp:
             content = f.read()
         return content.format(name)
 
+
+class Git:
+    def gitignore(self) -> str:
+        file = imp_resources.files(git) / ".gitignore.in"
+        with file.open() as f:
+            return f.read()

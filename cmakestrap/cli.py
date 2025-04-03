@@ -18,14 +18,14 @@ BOOTSTRAP_CMD = f"conan install . --build missing -s build_type=Debug \
         && mkdir -p {BOOTSTRAP_BINARY_DIR}/.cmake/api/v1/query \
         && touch {BOOTSTRAP_BINARY_DIR}/.cmake/api/v1/query/codemodel-v2 \
         && cmake --preset conan-debug \
-        && ln -s {BOOTSTRAP_BINARY_DIR}/compile_commands.json . \
+        && ln -sf {BOOTSTRAP_BINARY_DIR}/compile_commands.json . \
         && cmake --build --preset conan-debug"
 
 BOOTSTRAP_CMD_MOD = f"conan install . --build missing -s build_type=Debug \
         && mkdir -p {BOOTSTRAP_BINARY_DIR}/.cmake/api/v1/query \
         && touch {BOOTSTRAP_BINARY_DIR}/.cmake/api/v1/query/codemodel-v2 \
         && CXX=clang++ CC=clang cmake --preset conan-debug \
-        && ln -s {BOOTSTRAP_BINARY_DIR}/compile_commands.json . \
+        && ln -sf {BOOTSTRAP_BINARY_DIR}/compile_commands.json . \
         && cmake --build --preset conan-debug"
 
 CPP_STD_TO_CMAKE_VER = {
@@ -155,7 +155,7 @@ def get_args() -> Args:
         logger.error(f"'{dir}' is not a directory!")
         exit(1)
 
-    if dir.exists() and any(dir.iterdir()):
+    if dir.exists() and any(dir.iterdir()) and not parsed.bootstrap_only:
         response = input(f">>> '{dir}' is not empty, continue? [y/N] ")
         if not response.lower() == "y" and not response.lower() == "yes":
             logger.info("Operation aborted")
@@ -320,6 +320,10 @@ def configure_cpp(cfg: Config, project_kind: ProjectKind):
 
 
 def configure_git(cfg: Config):
+    if not command_exists("git"):
+        logger.warning("Git executable not found, skipping git configuration")
+        return
+
     logger.info("Configuring git...")
 
     try:
@@ -329,7 +333,8 @@ def configure_git(cfg: Config):
         logger.error(f"Failed to initialize git: {e}")
 
     gitignore = cfg.dir / ".gitignore"
-    # TODO: write gitignore template, but first create the template for it
+    tmpl = templates.Git()
+    write_tmpl(gitignore, tmpl.gitignore)
 
 
 def write_tmpl[**P](file: Path, tmpl_fn: Callable[P, str], *a: P.args, **k: P.kwargs) -> bool:
@@ -347,6 +352,8 @@ def bootstrap_project(cfg: Config, modules: bool) -> Path | None:
         logger.error("CMakeLists.txt does not exist, cannot bootstrap")
         return None
 
+    logger.info(f"Bootstrapping project '{cfg.name}'...")
+
     with chdir(cfg.dir):
         command = BOOTSTRAP_CMD_MOD if modules else BOOTSTRAP_CMD
         command = " ".join(command.split())  # remove repeated spaces
@@ -355,7 +362,7 @@ def bootstrap_project(cfg: Config, modules: bool) -> Path | None:
             completed_process.check_returncode()
             logger.info("Bootstrap complete")
         except subprocess.CalledProcessError as e:
-            logger.error(f"\nFailed to bootstrap: \n{e}")
+            logger.error(f"Failed to bootstrap: \n{e}")
             return None
 
         return cfg.dir / BOOTSTRAP_BINARY_DIR / ("main" if cfg.use_main else cfg.name)
