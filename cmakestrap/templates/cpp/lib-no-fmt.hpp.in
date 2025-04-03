@@ -1,0 +1,10 @@
+
+#include <iostream>
+
+namespace {0}
+{{
+    inline void hello()
+    {{
+         std::cout << "Hello from {0}!\n";
+    }}
+}}

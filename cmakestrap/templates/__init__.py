@@ -74,12 +74,21 @@ class Cpp:
             content = f.read()
         return content.format(name)
 
-    def module(self, name: str) -> str:
-        # TODO: add module generation, but first create the template
-        raise NotImplementedError("Module generation is not implemented yet")
-
-    def lib(self, name: str) -> str:
-        file = imp_resources.files(cpp) / "lib.hpp.in"
+    def lib(self, name: str, use_fmt: bool) -> str:
+        file = imp_resources.files(cpp) / ("lib.hpp.in" if use_fmt else "lib-no-fmt.hpp.in")
         with file.open() as f:
             content = f.read()
         return content.format(name)
+
+    def main_mod(self, name: str) -> str:
+        file = imp_resources.files(cpp) / "main.cxx.in"
+        with file.open() as f:
+            content = f.read()
+        return content.format(name)
+
+    def lib_mod(self, name: str) -> str:
+        file = imp_resources.files(cpp) / "lib.cxx.in"
+        with file.open() as f:
+            content = f.read()
+        return content.format(name)
+

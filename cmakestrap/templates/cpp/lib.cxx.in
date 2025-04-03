@@ -1,0 +1,14 @@
+module;
+
+// unfortunately conan don't support modules yet, so we need to use global module fragment
+#include <fmt/base.h>
+
+export module {0};
+
+export namespace {0}
+{{
+    inline void hello()
+    {{
+        fmt::println("Hello from {0}!");
+    }}
+}}

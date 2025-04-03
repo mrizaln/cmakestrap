@@ -1,0 +1,7 @@
+import {0};
+
+int main()
+{{
+    {0}::hello();
+    return 0;
+}}

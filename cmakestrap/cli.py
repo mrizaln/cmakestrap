@@ -1,4 +1,5 @@
 import logging
+import platform
 import re
 import subprocess
 from argparse import ArgumentParser
@@ -9,6 +10,8 @@ from enum import Enum
 from pathlib import Path
 
 from . import templates
+from .__version__ import __version__
+
 
 BOOTSTRAP_BINARY_DIR = "build/Debug"
 BOOTSTRAP_CMD = f"conan install . --build missing -s build_type=Debug \
@@ -29,6 +32,8 @@ CPP_STD_TO_CMAKE_VER = {
     20: "3.16",
     23: "3.22",
 }
+
+CMAKE_VER_WITH_MODULES = "3.28"
 
 PROJECT_NAME_RE: re.Pattern = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
@@ -69,18 +74,28 @@ class Args:
 
 
 def get_args() -> Args:
+    if not command_exists("cmake"):
+        logger.fatal("CMake is not installed, please install it first")
+        exit(1)
+
+    if not command_exists("conan"):
+        logger.fatal("This script use Conan as dependency manager, please install it first")
+        exit(1)
+
     args = ArgumentParser(description="Simple CMake project initializer")
 
     add = args.add_argument
 
-    add("dir", help="Directory to initialize")
-    add("--name", help="Project name, defaults to directory name if omitted", nargs="?")
-    add("--std", help="C++ standard, default: 20", nargs="?", type=int, default=20)
+    add("dir", help="Directory to initialize (can be empty or non-existent)")
+    add("--name", help="Project name, defaults to directory name if omitted")
+    add("--std", help="C++ standard, default: 20", type=int, default=20)
     add("--main", help="Use main as the executable name", action="store_true")
 
     add("--git", help="Initialize git repository", action="store_true")
     add("--mold", help="Use mold as the linker", action="store_true")
     add("--no-bootstrap", help="Skip bootstrap step", action="store_true")
+
+    add("--version", action="version", version=f"%(prog)s {__version__}")
 
     kind = args.add_mutually_exclusive_group()
     add = kind.add_argument
@@ -126,6 +141,11 @@ def get_args() -> Args:
         case _:
             project_kind = ProjectKind.EXE
 
+    if project_kind == ProjectKind.MOD and not command_exists("clang++"):
+        logger.fatal("clang++ executable not found")
+        logger.fatal("This script only support clang for C++20 modules at the moment")
+        exit(1)
+
     if std not in CPP_STD_TO_CMAKE_VER:
         logger.error(f"Invalid C++ version: {std}")
         logger.error(f"Supported versions: {list(CPP_STD_TO_CMAKE_VER.keys())}")
@@ -141,11 +161,15 @@ def get_args() -> Args:
             logger.info("Operation aborted")
             exit(1)
 
+    cmake_ver = (
+        CPP_STD_TO_CMAKE_VER[std] if project_kind != ProjectKind.MOD else CMAKE_VER_WITH_MODULES
+    )
+
     config = Config(
         dir=dir,
         name=name,
         cpp_ver=std,
-        cmake_ver=CPP_STD_TO_CMAKE_VER[std],
+        cmake_ver=cmake_ver,
         use_mold=use_mold,
         use_main=use_main,
         init_git=init_git,
@@ -220,16 +244,17 @@ def configure_cmake(cfg: Config, kind: ProjectKind) -> bool:
         logger.error(f"'{cfg.dir}' already contains a CMakeLists.txt file")
         return False
 
-    cmake_dir = cfg.dir / "cmake"
-    assert cmake_dir.exists(), "CMake directory does not exist"
-
     tmpl = templates.CMake(cfg.cmake_ver)
-    includes: list[Path] = []
 
     if kind == ProjectKind.LIB:
         cmake_main = cfg.dir / "CMakeLists.txt"
         write_tmpl(cmake_main, tmpl.lib, cfg.name, f"<{cfg.name} library description>")
         return True
+
+    cmake_dir = cfg.dir / "cmake"
+    assert cmake_dir.exists(), "CMake directory does not exist"
+
+    includes: list[Path] = []
 
     # in-place build guard
     cmake_guard = cmake_dir / "prelude.cmake"
@@ -281,15 +306,17 @@ def configure_cpp(cfg: Config, project_kind: ProjectKind):
     match project_kind:
         case ProjectKind.EXE:
             lib = source / f"{cfg.name}.hpp"
-            write_tmpl(lib, tmpl.lib, cfg.name)
+            write_tmpl(lib, tmpl.lib, cfg.name, True)
             main = source / "main.cpp"
             write_tmpl(main, tmpl.main, cfg.name)
         case ProjectKind.MOD:
+            lib = source / f"{cfg.name}.cxx"
+            write_tmpl(lib, tmpl.lib_mod, cfg.name)
             main = source / "main.cxx"
-            write_tmpl(main, tmpl.module, cfg.name)
+            write_tmpl(main, tmpl.main_mod, cfg.name)
         case ProjectKind.LIB:
             lib = include / f"{cfg.name}.hpp"
-            write_tmpl(lib, tmpl.lib, cfg.name)
+            write_tmpl(lib, tmpl.lib, cfg.name, False)
 
 
 def configure_git(cfg: Config):
@@ -326,12 +353,22 @@ def bootstrap_project(cfg: Config, modules: bool) -> Path | None:
         completed_process = subprocess.run(command, shell=True)
         try:
             completed_process.check_returncode()
-            logger.info("Bootstrap complete.")
+            logger.info("Bootstrap complete")
         except subprocess.CalledProcessError as e:
             logger.error(f"\nFailed to bootstrap: \n{e}")
             return None
 
-        return cfg.dir / BOOTSTRAP_BINARY_DIR / "main"
+        return cfg.dir / BOOTSTRAP_BINARY_DIR / ("main" if cfg.use_main else cfg.name)
+
+
+def command_exists(command: str) -> bool:
+    cmd = "where" if platform.system() == "Windows" else "which"
+    try:
+        null = subprocess.DEVNULL
+        subprocess.run([cmd, command], stdout=null, stderr=null, check=True)
+        return True
+    except subprocess.CalledProcessError:
+        return False
 
 
 def main() -> int:
@@ -339,15 +376,16 @@ def main() -> int:
 
     match args.operation:
         case Operation.NORMAL_CONFIGURE:
-            success = configure_project(args.config, args.kind)
-            if success:
-                bootstrap_project(args.config, args.kind == ProjectKind.MOD)
+            if configure_project(args.config, args.kind):
+                if exe := bootstrap_project(args.config, args.kind == ProjectKind.MOD):
+                    subprocess.run(exe)
             logger.info("Project configured successfully")
         case Operation.CONFIGURE_ONLY:
             configure_project(args.config, args.kind)
             logger.info("Project configured successfully")
         case Operation.BOOTSTRAP_ONLY:
-            bootstrap_project(args.config, args.kind == ProjectKind.MOD)
+            if exe := bootstrap_project(args.config, args.kind == ProjectKind.MOD):
+                subprocess.run(exe)
         case Operation.CMAKE_ONLY:
             configure_path(args.config.dir, args.kind)
             configure_cmake(args.config, args.kind)
