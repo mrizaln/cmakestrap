@@ -1,17 +1,18 @@
 import logging
 import platform
+import pprint
 import re
 import subprocess
+import sys
 from argparse import ArgumentParser
 from collections.abc import Callable
 from contextlib import chdir
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from enum import Enum
 from pathlib import Path
 
 from . import templates
 from .__version__ import __version__
-
 
 BOOTSTRAP_BINARY_DIR = "build/Debug"
 BOOTSTRAP_CMD = f"conan install . --build missing -s build_type=Debug \
@@ -88,7 +89,7 @@ def get_args() -> Args:
 
     add("dir", help="Directory to initialize (can be empty or non-existent)")
     add("--name", help="Project name, defaults to directory name if omitted")
-    add("--std", help="C++ standard, default: 20", type=int, default=20)
+    add("--std", help="C++ standard to be used, default: 20", type=int, default=20)
     add("--main", help="Use main as the executable name", action="store_true")
 
     add("--git", help="Initialize git repository", action="store_true")
@@ -97,11 +98,17 @@ def get_args() -> Args:
 
     add("--version", action="version", version=f"%(prog)s {__version__}")
 
+    log_level = args.add_mutually_exclusive_group()
+    add = log_level.add_argument
+
+    add("--debug", help="Enable debug logging", action="store_true")
+    add("--quiet", help="Enable quiet logging", action="store_true")
+
     kind = args.add_mutually_exclusive_group()
     add = kind.add_argument
 
-    add("--lib", help="Initialize as a library", action="store_true")
-    add("--mod", help="Initialize as C++20 module", action="store_true")
+    add("--lib", help="Initialize project as a library", action="store_true")
+    add("--mod", help="Initialize project using C++20 modules instead", action="store_true")
 
     only = args.add_mutually_exclusive_group()
     add = only.add_argument
@@ -110,7 +117,19 @@ def get_args() -> Args:
     add("--cmake-only", help="Generate CMake files only", action="store_true")
     add("--conan-only", help="Generate Conan files only", action="store_true")
 
+    if len(sys.argv) == 1:
+        args.print_help()
+        exit(1)
+
     parsed = args.parse_args()
+
+    match parsed.debug, parsed.quiet:
+        case True, False:
+            logger.setLevel(logging.DEBUG)
+        case False, True:
+            logger.setLevel(logging.WARNING)
+        case _:
+            logger.setLevel(logging.INFO)
 
     dir = Path(parsed.dir).resolve()
     std = parsed.std
@@ -182,12 +201,12 @@ def get_args() -> Args:
         operation = Operation.NORMAL_CONFIGURE
     elif should_configure:
         operation = Operation.CONFIGURE_ONLY
-    elif should_bootstrap:
-        operation = Operation.BOOTSTRAP_ONLY
     elif parsed.cmake_only:
         operation = Operation.CMAKE_ONLY
     elif parsed.conan_only:
         operation = Operation.CONAN_ONLY
+    elif should_bootstrap:
+        operation = Operation.BOOTSTRAP_ONLY
     else:
         logger.fatal("Invalid operation, how did you get here?")
         exit(1)
@@ -264,8 +283,11 @@ def configure_cmake(cfg: Config, kind: ProjectKind) -> bool:
     # mold include
     cmake_mold = cmake_dir / "mold.cmake"
     if cfg.use_mold:
-        if write_tmpl(cmake_mold, tmpl.mold):
-            includes.append(cmake_mold.relative_to(cfg.dir))
+        if command_exists("mold"):
+            if write_tmpl(cmake_mold, tmpl.mold):
+                includes.append(cmake_mold.relative_to(cfg.dir))
+        else:
+            logger.warning("Mold executable not found, skipping mold configuration")
 
     # main cmake file
     cmake_main = cfg.dir / "CMakeLists.txt"
@@ -381,6 +403,9 @@ def command_exists(command: str) -> bool:
 def main() -> int:
     args = get_args()
 
+    args_str = pprint.pformat(asdict(args), sort_dicts=False)
+    logger.debug(f"Parsed arguments:\n{args_str}")
+
     match args.operation:
         case Operation.NORMAL_CONFIGURE:
             if configure_project(args.config, args.kind):
@@ -397,6 +422,7 @@ def main() -> int:
             configure_path(args.config.dir, args.kind)
             configure_cmake(args.config, args.kind)
         case Operation.CONAN_ONLY:
+            configure_path(args.config.dir, args.kind)
             configure_conan(args.config)
 
     return 0
