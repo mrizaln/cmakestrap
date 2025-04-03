@@ -1,0 +1,9 @@
+#include <fmt/base.h>
+
+namespace {0}
+{{
+    inline void hello()
+    {{
+        fmt::println("Hello from {0}!");
+    }}
+}}

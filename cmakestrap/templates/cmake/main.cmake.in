@@ -1,0 +1,24 @@
+cmake_minimum_required(VERSION {0})
+project({1} VERSION 0.1.0)
+
+{2}
+
+set(CMAKE_CXX_STANDARD {3})
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+find_package(fmt REQUIRED)
+
+# include(cmake/fetched-libs.cmake)
+
+add_library({1}_lib INTERFACE)
+target_link_libraries({1}_lib INTERFACE fmt::fmt)
+
+add_executable({4} source/main.cpp)
+target_include_directories({4} PRIVATE source)
+target_link_libraries({4} PRIVATE {1}_lib)
+target_compile_options({4} PRIVATE -Wall -Wextra -Wconversion)
+
+# sanitizer
+target_compile_options({4} PRIVATE -fsanitize=address,leak,undefined)
+target_link_options({4} PRIVATE -fsanitize=address,leak,undefined)

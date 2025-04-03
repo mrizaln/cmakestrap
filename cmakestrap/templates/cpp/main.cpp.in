@@ -1,0 +1,7 @@
+#include "{0}.hpp"
+
+int main()
+{{
+    {0}::hello();
+    return 0;
+}}

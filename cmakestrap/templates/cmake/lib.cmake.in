@@ -1,0 +1,12 @@
+cmake_minimum_required(VERSION 3.12)
+
+project(
+    {0}
+    VERSION     0.1.0
+    LANGUAGES   CXX
+    DESCRIPTION "{1}")
+
+add_library({0} INTERFACE include/{0}.hpp)
+target_include_directories({0} INTERFACE include)
+target_compile_features({0} INTERFACE cxx_std_20)
+set_target_properties({0} PROPERTIES CXX_EXTENSIONS OFF)
