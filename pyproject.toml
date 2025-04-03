@@ -1,0 +1,46 @@
+[build-system]
+requires = ["hatchling >= 1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cmakestrap"
+description = "Simpler CMake project initializer script for C++"
+readme = "README.md"
+license = "MIT"
+requires-python = ">= 3.12"
+keywords = ["cmake", "c++", "init"]
+dynamic = ["version"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Natural Language :: English",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: C++",
+    "Operating System :: OS Independent",
+    "Topic :: Software Development",
+]
+
+[[project.authors]]
+name = "Muhammad Rizal Nurromdhoni"
+email = "mrizaln2000@gmail.com"
+
+[[project.maintainers]]
+name = "Muhammad Rizal Nurromdhoni"
+email = "mrizaln2000@gmail.com"
+
+[project.urls]
+Repository = "https://github.com/mrizaln/cmakestrap"
+Issues = "https://github.com/mrizaln/cmakestrap/issues"
+
+[project.scripts]
+cmakestrap = "cmakestrap.cli:main"
+
+[tool.hatch.version]
+path = "cmakestrap/__version__.py"
+
+[tool.setuptools.dynamic]
+version = { attr = "cmakestrap.__version__" }
+
+[tool.ruff]
+line-length = 100       # 88 is just too little :(
