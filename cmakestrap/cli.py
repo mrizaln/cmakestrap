@@ -2,7 +2,6 @@ import logging
 import platform
 import pprint
 import re
-import subprocess
 import sys
 from argparse import ArgumentParser
 from collections.abc import Callable
@@ -10,6 +9,7 @@ from contextlib import chdir
 from dataclasses import asdict, dataclass
 from enum import Enum
 from pathlib import Path
+from subprocess import DEVNULL, CalledProcessError, run
 
 from . import templates
 from .__version__ import __version__
@@ -56,6 +56,13 @@ class Operation(Enum):
     CONAN_ONLY = "conan_only"
 
 
+class Log(Enum):
+    QUIET = "quiet"
+    DEBUG = "debug"
+    NORMAL = "normal"
+    VERBOSE = "verbose"
+
+
 @dataclass
 class Config:
     dir: Path
@@ -65,6 +72,7 @@ class Config:
     use_mold: bool
     use_main: bool
     init_git: bool
+    log: Log
 
 
 @dataclass
@@ -90,25 +98,20 @@ def get_args() -> Args:
     add("dir", help="Directory to initialize (can be empty or non-existent)")
     add("--name", help="Project name, defaults to directory name if omitted")
     add("--std", help="C++ standard to be used, default: 20", type=int, default=20)
-    add("--main", help="Use main as the executable name", action="store_true")
-
-    add("--git", help="Initialize git repository", action="store_true")
-    add("--mold", help="Use mold as the linker", action="store_true")
-    add("--no-bootstrap", help="Skip bootstrap step", action="store_true")
-
-    add("--version", action="version", version=f"%(prog)s {__version__}")
-
-    log_level = args.add_mutually_exclusive_group()
-    add = log_level.add_argument
-
-    add("--debug", help="Enable debug logging", action="store_true")
-    add("--quiet", help="Enable quiet logging", action="store_true")
+    add("--main", help="Use main as the executable name (exe/mod mode)", action="store_true")
 
     kind = args.add_mutually_exclusive_group()
     add = kind.add_argument
 
-    add("--lib", help="Initialize project as a library", action="store_true")
-    add("--mod", help="Initialize project using C++20 modules instead", action="store_true")
+    add("--exe", help="Initialize project as executable (default)", action="store_true")
+    add("--mod", help="Initialize project as executable using C++20 modules", action="store_true")
+    add("--lib", help="Initialize project as library", action="store_true")
+
+    add = args.add_argument
+
+    add("--git", help="Initialize git", action="store_true")
+    add("--mold", help="Use mold as the linker", action="store_true")
+    add("--no-bootstrap", help="Skip bootstrap step", action="store_true")
 
     only = args.add_mutually_exclusive_group()
     add = only.add_argument
@@ -117,18 +120,33 @@ def get_args() -> Args:
     add("--cmake-only", help="Generate CMake files only", action="store_true")
     add("--conan-only", help="Generate Conan files only", action="store_true")
 
+    log_level = args.add_mutually_exclusive_group()
+    add = log_level.add_argument
+
+    add("--debug", help="Enable debug logging", action="store_true")
+    add("--quiet", help="Enable quiet logging", action="store_true")
+    add("--verbose", help="Enable verbose logging", action="store_true")
+
+    args.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+
     if len(sys.argv) == 1:
         args.print_help()
         exit(1)
 
     parsed = args.parse_args()
 
-    match parsed.debug, parsed.quiet:
-        case True, False:
+    match parsed.debug, parsed.quiet, parsed.verbose:
+        case True, False, False:
+            cmd_output = Log.DEBUG
             logger.setLevel(logging.DEBUG)
-        case False, True:
+        case False, True, False:
+            cmd_output = Log.QUIET
             logger.setLevel(logging.WARNING)
+        case False, False, True:
+            cmd_output = Log.VERBOSE
+            logger.setLevel(logging.INFO)
         case _:
+            cmd_output = Log.NORMAL
             logger.setLevel(logging.INFO)
 
     dir = Path(parsed.dir).resolve()
@@ -192,6 +210,7 @@ def get_args() -> Args:
         use_mold=use_mold,
         use_main=use_main,
         init_git=init_git,
+        log=cmd_output,
     )
 
     should_configure = not (parsed.conan_only or parsed.cmake_only or parsed.bootstrap_only)
@@ -350,9 +369,10 @@ def configure_git(cfg: Config):
 
     try:
         with chdir(cfg.dir):
-            subprocess.run(["git", "init"]).check_returncode()
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Failed to initialize git: {e}")
+            run(["git", "init"], capture_output=cfg.log in [Log.QUIET, Log.NORMAL], check=True)
+    except CalledProcessError as e:
+        logger.error(f"Last command stderr: \n{e.stderr.decode()}")
+        logger.error(f"Failed to initialize git: \n{e}")
 
     gitignore = cfg.dir / ".gitignore"
     tmpl = templates.Git()
@@ -379,11 +399,11 @@ def bootstrap_project(cfg: Config, modules: bool) -> Path | None:
     with chdir(cfg.dir):
         command = BOOTSTRAP_CMD_MOD if modules else BOOTSTRAP_CMD
         command = " ".join(command.split())  # remove repeated spaces
-        completed_process = subprocess.run(command, shell=True)
         try:
-            completed_process.check_returncode()
+            run(command, shell=True, capture_output=cfg.log in [Log.QUIET, Log.NORMAL], check=True)
             logger.info("Bootstrap complete")
-        except subprocess.CalledProcessError as e:
+        except CalledProcessError as e:
+            logger.error(f"Last command stderr: \n{e.stderr.decode()}")
             logger.error(f"Failed to bootstrap: \n{e}")
             return None
 
@@ -393,10 +413,9 @@ def bootstrap_project(cfg: Config, modules: bool) -> Path | None:
 def command_exists(command: str) -> bool:
     cmd = "where" if platform.system() == "Windows" else "which"
     try:
-        null = subprocess.DEVNULL
-        subprocess.run([cmd, command], stdout=null, stderr=null, check=True)
+        run([cmd, command], stdout=DEVNULL, stderr=DEVNULL, check=True)
         return True
-    except subprocess.CalledProcessError:
+    except CalledProcessError:
         return False
 
 
@@ -410,14 +429,14 @@ def main() -> int:
         case Operation.NORMAL_CONFIGURE:
             if configure_project(args.config, args.kind):
                 if exe := bootstrap_project(args.config, args.kind == ProjectKind.MOD):
-                    subprocess.run(exe)
-            logger.info("Project configured successfully")
+                    logger.info("Project configured successfully")
+                    run(exe, check=True, capture_output=args.config.log == Log.QUIET)
         case Operation.CONFIGURE_ONLY:
             configure_project(args.config, args.kind)
             logger.info("Project configured successfully")
         case Operation.BOOTSTRAP_ONLY:
             if exe := bootstrap_project(args.config, args.kind == ProjectKind.MOD):
-                subprocess.run(exe)
+                run(exe, check=True, capture_output=args.config.log == Log.QUIET)
         case Operation.CMAKE_ONLY:
             configure_path(args.config.dir, args.kind)
             configure_cmake(args.config, args.kind)
