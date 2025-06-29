@@ -264,7 +264,7 @@ def configure_path(path: Path, project_kind: ProjectKind):
 
     match project_kind:
         case ProjectKind.EXE | ProjectKind.MOD:
-            source = path / "source"
+            source = path / "src"
             source.mkdir(exist_ok=True)
 
             cmake_include_dir = path / "cmake"
@@ -334,7 +334,7 @@ def configure_conan(cfg: Config):
 def configure_cpp(cfg: Config, project_kind: ProjectKind):
     logger.info("Configuring C++ files...")
 
-    source = cfg.dir / "source"
+    source = cfg.dir / "src"
     include = cfg.dir / "include"
 
     if project_kind == ProjectKind.LIB:
