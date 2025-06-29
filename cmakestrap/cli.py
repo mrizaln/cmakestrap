@@ -35,9 +35,6 @@ CMAKE_VER_WITH_MODULES = "3.28"
 
 PROJECT_NAME_RE: re.Pattern = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
-logging.basicConfig(format="[%(levelname)s] %(message)s", level=logging.INFO)
-logger = logging.getLogger(__name__)
-
 
 class ProjectKind(Enum):
     LIB = "lib"
@@ -77,6 +74,41 @@ class Args:
     config: Config
     kind: ProjectKind
     operation: Operation
+
+
+class CustomFormatter(logging.Formatter):
+    BLUE = "\x1b[34;20m"
+    GREEN = "\x1b[32;20m"
+    YELLOW = "\x1b[33;20m"
+    RED = "\x1b[31;20m"
+    BOLD_RED = "\x1b[31;1m"
+    RESET = "\x1b[0m"
+    FMT = "%(asctime)s [{}-%(levelname).1s-{}] %(message)s"
+
+    FORMATS = {
+        logging.DEBUG: FMT.format(BLUE, RESET),
+        logging.INFO: FMT.format(GREEN, RESET),
+        logging.WARNING: FMT.format(YELLOW, RESET),
+        logging.ERROR: FMT.format(RED, RESET),
+        logging.CRITICAL: FMT.format(BOLD_RED, RESET),
+    }
+
+    def format(self, record):
+        log_fmt = self.FORMATS.get(record.levelno)
+        formatter = logging.Formatter(fmt=log_fmt, datefmt="[%Y-%m-%d|%H:%M:%S]")
+        return formatter.format(record)
+
+
+logger = logging.getLogger(__name__)
+
+
+def init_logger():
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.INFO)
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.INFO)
+    ch.setFormatter(CustomFormatter())
+    logger.addHandler(ch)
 
 
 def get_args() -> Args:
@@ -425,6 +457,8 @@ def command_exists(command: str) -> bool:
 
 
 def main() -> int:
+    init_logger()
+
     args = get_args()
 
     args_str = pprint.pformat(asdict(args), sort_dicts=False)
