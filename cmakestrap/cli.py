@@ -1,4 +1,5 @@
 import logging
+import os
 import platform
 import pprint
 import re
@@ -14,20 +15,16 @@ from subprocess import DEVNULL, CalledProcessError, run
 from . import templates
 from .__version__ import __version__
 
-BOOTSTRAP_BINARY_DIR = "build/Debug"
-BOOTSTRAP_CMD = f"conan install . --build missing -s build_type=Debug \
-        && mkdir -p {BOOTSTRAP_BINARY_DIR}/.cmake/api/v1/query \
-        && touch {BOOTSTRAP_BINARY_DIR}/.cmake/api/v1/query/codemodel-v2 \
-        && cmake --preset conan-debug \
-        && ln -sf {BOOTSTRAP_BINARY_DIR}/compile_commands.json . \
-        && cmake --build --preset conan-debug"
+IS_WINDOWS = platform.system() == "Windows"
 
-BOOTSTRAP_CMD_MOD = f"conan install . --build missing -s build_type=Debug \
-        && mkdir -p {BOOTSTRAP_BINARY_DIR}/.cmake/api/v1/query \
-        && touch {BOOTSTRAP_BINARY_DIR}/.cmake/api/v1/query/codemodel-v2 \
-        && CXX=clang++ CC=clang cmake --preset conan-debug \
-        && ln -sf {BOOTSTRAP_BINARY_DIR}/compile_commands.json . \
-        && cmake --build --preset conan-debug"
+# fmt: off
+BOOTSTRAP_BINARY_DIR   = "build/Debug"
+BOOTSTRAP_INSTALL      = "conan install . --build missing -s build_type=Debug"
+BOOTSTRAP_GENERATE     = "cmake --preset conan-debug"
+BOOTSTRAP_GENERATE_NT  = "cmake --preset conan-default"
+BOOTSTRAP_LINK_COMP_DB = f"ln -sf {BOOTSTRAP_BINARY_DIR}/compile_commands.json ."
+BOOTSTRAP_COMPILE      = "cmake --build --preset conan-debug"
+# fmt: on
 
 CPP_STD_TO_CMAKE_VER = {
     20: "3.16",
@@ -154,7 +151,7 @@ def get_args() -> Args:
     name = parsed.name or dir.name
 
     if "-" in name:
-        logger.warning(f"Project name '{name}' contains dash (-), replacing with underscore (_)")
+        logger.warning(f"Project name '{name}' contains hyphen (-), replacing with underscore (_)")
         name = name.replace("-", "_")
         logger.info(f"Project name changed to '{name}'")
 
@@ -396,17 +393,25 @@ def bootstrap_project(cfg: Config, modules: bool) -> Path | None:
 
     logger.info(f"Bootstrapping project '{cfg.name}'...")
 
-    with chdir(cfg.dir):
-        command = BOOTSTRAP_CMD_MOD if modules else BOOTSTRAP_CMD
-        command = " ".join(command.split())  # remove repeated spaces
-        try:
-            run(command, shell=True, capture_output=cfg.log in [Log.QUIET, Log.NORMAL], check=True)
-            logger.info("Bootstrap complete")
-        except CalledProcessError as e:
-            logger.error(f"Last command stderr: \n{e.stderr.decode()}")
-            logger.error(f"Failed to bootstrap: \n{e}")
-            return None
+    install = BOOTSTRAP_INSTALL.split()
+    generate = (BOOTSTRAP_GENERATE_NT if IS_WINDOWS else BOOTSTRAP_GENERATE).split()
+    link_comp_db = BOOTSTRAP_LINK_COMP_DB.split()
+    compile = BOOTSTRAP_COMPILE.split()
 
+    commands = (install, generate, link_comp_db, compile)
+
+    with chdir(cfg.dir):
+        for cmd in commands:
+            try:
+                env = os.environ | ({"CXX": "clang++", "CC": "clang"} if modules else {})
+                run(cmd, env=env, capture_output=cfg.log in [Log.QUIET, Log.NORMAL], check=True)
+            except CalledProcessError as e:
+                logger.error(f"Last command stdout: \n{e.stdout.decode() if not None else ''}")
+                logger.error(f"Last command stderr: \n{e.stderr.decode() if not None else ''}")
+                logger.error(f"Failed to bootstrap: \n{e}")
+                return None
+
+        logger.info("Bootstrap complete")
         return cfg.dir / BOOTSTRAP_BINARY_DIR / ("main" if cfg.use_main else cfg.name)
 
 
