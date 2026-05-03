@@ -481,6 +481,11 @@ def bootstrap_project(cfg: Config, is_modules: bool) -> Path | None:
         logger.error("CMakeLists.txt does not exist, cannot bootstrap")
         return None
 
+    conan = cfg.dir / "conanfile.py"
+    if not conan.exists():
+        logger.error("conanfile.py does not exist, cannot bootstrap")
+        return None
+
     logger.info(f"Bootstrapping project '{cfg.name}'...")
 
     install = BOOTSTRAP_INSTALL.split()
