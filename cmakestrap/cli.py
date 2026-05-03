@@ -4,13 +4,15 @@ import platform
 import pprint
 import re
 import sys
+import time
 from argparse import ArgumentParser
 from collections.abc import Callable
 from contextlib import chdir
 from dataclasses import asdict, dataclass
 from enum import Enum
 from pathlib import Path
-from subprocess import DEVNULL, CalledProcessError, run
+from subprocess import DEVNULL, CalledProcessError, TimeoutExpired, run, Popen, PIPE
+from typing import LiteralString
 
 from . import templates
 from .__version__ import __version__
@@ -262,6 +264,59 @@ def get_args() -> Args:
     return Args(config=config, kind=project_kind, operation=operation)
 
 
+def run_timed(
+    args: list[str] | list[LiteralString],
+    env: dict[str, str] | None,
+    timeout: int,
+    verbose: bool,
+    show_stderr: bool = False,
+) -> bool:
+    if verbose:
+        try:
+            run(args, env=env, capture_output=False, check=True)
+            return True
+        except CalledProcessError as e:
+            logger.error(f"Failed to run command [{' '.join(args)}]: \n{e}")
+            logger.error(f"Last command stdout: \n{e.stdout.decode() if not None else ''}")
+            logger.error(f"Last command stderr: \n{e.stderr.decode() if not None else ''}")
+            return False
+
+    cmd = Popen(args, env=env, stdout=PIPE, stderr=PIPE, text=True, bufsize=0)
+
+    try:
+        ret = cmd.wait(timeout)
+        if ret == 0:
+            return True
+
+        stdout = cmd.stdout.read() if cmd.stdout else ""
+        stderr = cmd.stderr.read() if cmd.stderr else ""
+        logger.error(f"Failed to run command [{' '.join(args)}]: \n non-zero return: {ret}")
+        logger.error(f"Last command stdout: \n{stdout}")
+        logger.error(f"Last command stderr: \n{stderr}")
+        return False
+    except TimeoutExpired:
+        ...
+
+    logger.info(f"Command [{' '.join(args)}] is not complete after {timeout} seconds")
+    time.sleep(0.1)
+
+    out = cmd.stderr if show_stderr else cmd.stdout
+    print(80 * "-")
+    if out:
+        for line in out:
+            print(line, end="")
+    print(80 * "-")
+
+    ret = cmd.wait()
+    if ret == 0:
+        return True
+
+    stderr = cmd.stderr.read() if cmd.stderr else ""
+    logger.error(f"Failed to run command [{' '.join(args)}]: \n non-zero return: {ret}")
+    logger.error(f"Last command stderr: \n{stderr}")
+    return False
+
+
 def configure_project(cfg: Config, project_kind: ProjectKind) -> bool:
     logger.info(f"Configuring project '{cfg.name}'...")
 
@@ -417,7 +472,7 @@ def write_tmpl[**P](file: Path, tmpl_fn: Callable[P, str], *a: P.args, **k: P.kw
         return False
 
 
-def bootstrap_project(cfg: Config, modules: bool) -> Path | None:
+def bootstrap_project(cfg: Config, is_modules: bool) -> Path | None:
     cmake = cfg.dir / "CMakeLists.txt"
     if not cmake.exists():
         logger.error("CMakeLists.txt does not exist, cannot bootstrap")
@@ -430,17 +485,18 @@ def bootstrap_project(cfg: Config, modules: bool) -> Path | None:
     link_comp_db = BOOTSTRAP_LINK_COMP_DB.split()
     compile = BOOTSTRAP_COMPILE.split()
 
-    commands = (install, generate, link_comp_db, compile)
+    commands = ((install, True), (generate, False), (link_comp_db, False), (compile, True))
+    env = (
+        os.environ
+        | {"CLICOLOR_FORCE": "1"}
+        | ({"CXX": "clang++", "CC": "clang"} if is_modules else {})
+    )
+    timeout = 3
 
     with chdir(cfg.dir):
-        for cmd in commands:
-            try:
-                env = os.environ | ({"CXX": "clang++", "CC": "clang"} if modules else {})
-                run(cmd, env=env, capture_output=cfg.log in [Log.QUIET, Log.NORMAL], check=True)
-            except CalledProcessError as e:
-                logger.error(f"Last command stdout: \n{e.stdout.decode() if not None else ''}")
-                logger.error(f"Last command stderr: \n{e.stderr.decode() if not None else ''}")
-                logger.error(f"Failed to bootstrap: \n{e}")
+        for [cmd, show_stderr] in commands:
+            ret = run_timed(cmd, env, timeout, cfg.log not in [Log.QUIET, Log.NORMAL], show_stderr)
+            if not ret:
                 return None
 
         logger.info("Bootstrap complete")
@@ -469,12 +525,14 @@ def main() -> int:
             if configure_project(args.config, args.kind):
                 if exe := bootstrap_project(args.config, args.kind == ProjectKind.MOD):
                     logger.info("Project configured successfully")
+                    print(80 * "-")
                     run(exe, check=True, capture_output=args.config.log == Log.QUIET)
         case Operation.CONFIGURE_ONLY:
             configure_project(args.config, args.kind)
             logger.info("Project configured successfully")
         case Operation.BOOTSTRAP_ONLY:
             if exe := bootstrap_project(args.config, args.kind == ProjectKind.MOD):
+                print(80 * "-")
                 run(exe, check=True, capture_output=args.config.log == Log.QUIET)
         case Operation.CMAKE_ONLY:
             configure_path(args.config.dir, args.kind)
