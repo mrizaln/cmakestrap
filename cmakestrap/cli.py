@@ -35,7 +35,7 @@ CPP_STD_TO_CMAKE_VER = {
 
 CMAKE_VER_WITH_MODULES = "3.28"
 
-PROJECT_NAME_RE: re.Pattern = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
+PROJECT_NAME_RE: re.Pattern = re.compile(r"^[a-zA-Z][a-zA-Z0-9_-]*$")
 
 
 class ProjectKind(Enum):
@@ -184,18 +184,16 @@ def get_args() -> Args:
     std = parsed.std
     name = parsed.name or dir.name
 
-    if "-" in name:
-        logger.warning(f"Project name '{name}' contains hyphen (-), replacing with underscore (_)")
-        name = name.replace("-", "_")
-        logger.info(f"Project name changed to '{name}'")
-
     if not PROJECT_NAME_RE.match(name):
         logger.error(f"Invalid project name: '{name}'")
         logger.error(
-            "Project name must start with a letter or underscore and can only contain letters, "
-            "digits, and underscores"
+            "Project name must start with a letter and can only contain letters, digits, and underscores or hyphen"
         )
         exit(1)
+
+    if "-" in name:
+        logger.warning("Project name contains '-'")
+        logger.warning("C++ namespaces and files for this project will use '_' in place of '-'")
 
     use_main = parsed.main
     use_mold = parsed.mold
@@ -370,7 +368,8 @@ def configure_cmake(cfg: Config, kind: ProjectKind) -> bool:
 
     if kind == ProjectKind.LIB:
         cmake_main = cfg.dir / "CMakeLists.txt"
-        write_tmpl(cmake_main, tmpl.lib, cfg.name, f"<{cfg.name} library description>")
+        cpp_name = cfg.name.replace("-", "_")
+        write_tmpl(cmake_main, tmpl.lib, cfg.name, cpp_name, f"<{cfg.name} library description>")
         return True
 
     cmake_dir = cfg.dir / "cmake"
@@ -398,7 +397,10 @@ def configure_cmake(cfg: Config, kind: ProjectKind) -> bool:
         case ProjectKind.EXE:
             write_tmpl(cmake_main, tmpl.main, cfg.name, cfg.cpp_ver, cfg.use_main, includes)
         case ProjectKind.MOD:
-            write_tmpl(cmake_main, tmpl.module, cfg.name, cfg.cpp_ver, cfg.use_main, includes)
+            cpp_name = cfg.name.replace("-", "_")
+            write_tmpl(
+                cmake_main, tmpl.module, cfg.name, cpp_name, cfg.cpp_ver, cfg.use_main, includes
+            )
 
     # fetchcontent
     cmake_fetch = cmake_dir / "fetched-libs.cmake"
@@ -427,21 +429,22 @@ def configure_cpp(cfg: Config, project_kind: ProjectKind):
         assert source.exists(), "Source directory does not exist"
 
     tmpl = templates.Cpp()
+    name = cfg.name.replace("-", "_")
 
     match project_kind:
         case ProjectKind.EXE:
-            lib = source / f"{cfg.name}.hpp"
-            write_tmpl(lib, tmpl.lib, cfg.name, True)
+            lib = source / f"{name}.hpp"
+            write_tmpl(lib, tmpl.lib, name, cfg.name, True)
             main = source / "main.cpp"
-            write_tmpl(main, tmpl.main, cfg.name)
+            write_tmpl(main, tmpl.main, name)
         case ProjectKind.MOD:
-            lib = source / f"{cfg.name}.cxx"
-            write_tmpl(lib, tmpl.lib_mod, cfg.name)
+            lib = source / f"{name}.cxx"
+            write_tmpl(lib, tmpl.lib_mod, name, cfg.name)
             main = source / "main.cxx"
-            write_tmpl(main, tmpl.main_mod, cfg.name)
+            write_tmpl(main, tmpl.main_mod, name)
         case ProjectKind.LIB:
-            lib = include / f"{cfg.name}.hpp"
-            write_tmpl(lib, tmpl.lib, cfg.name, False)
+            lib = include / f"{name}.hpp"
+            write_tmpl(lib, tmpl.lib, name, cfg.name, False)
 
 
 def configure_git(cfg: Config):

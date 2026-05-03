@@ -4,6 +4,6 @@ namespace {0}
 {{
     inline void hello()
     {{
-        fmt::println("Hello from {0}!");
+        fmt::println("Hello from {1}!");
     }}
 }}

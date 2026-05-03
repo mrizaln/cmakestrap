@@ -23,7 +23,7 @@ class CMake:
 
         return content.format(self.version, name, includes_str, std, use_main and "main" or name)
 
-    def module(self, name: str, std: int, use_main: bool, includes: list[Path]) -> str:
+    def module(self, name: str, cpp_name: str, std: int, use_main: bool, includes: list[Path]) -> str:
         file = imp_resources.files(cmake) / "module.cmake.in"
         with file.open() as f:
             content = f.read()
@@ -36,13 +36,13 @@ class CMake:
             first = False
             includes_str += f"include({include})"
 
-        return content.format(self.version, name, includes_str, std, use_main and "main" or name)
+        return content.format(self.version, name, cpp_name, includes_str, std, use_main and "main" or name)
 
-    def lib(self, name: str, description: str) -> str:
+    def lib(self, name: str, cpp_name: str, description: str) -> str:
         file = imp_resources.files(cmake) / "lib.cmake.in"
         with file.open() as f:
             content = f.read()
-        return content.format(name, description)
+        return content.format(name, cpp_name, description)
 
     def prelude(self) -> str:
         file = imp_resources.files(cmake) / "prelude.cmake.in"
@@ -74,11 +74,11 @@ class Cpp:
             content = f.read()
         return content.format(name)
 
-    def lib(self, name: str, use_fmt: bool) -> str:
+    def lib(self, name: str, orig_name: str, use_fmt: bool) -> str:
         file = imp_resources.files(cpp) / ("lib.hpp.in" if use_fmt else "lib-no-fmt.hpp.in")
         with file.open() as f:
             content = f.read()
-        return content.format(name)
+        return content.format(name, orig_name)
 
     def main_mod(self, name: str) -> str:
         file = imp_resources.files(cpp) / "main.cxx.in"
@@ -86,11 +86,11 @@ class Cpp:
             content = f.read()
         return content.format(name)
 
-    def lib_mod(self, name: str) -> str:
+    def lib_mod(self, name: str, orig_name) -> str:
         file = imp_resources.files(cpp) / "lib.cxx.in"
         with file.open() as f:
             content = f.read()
-        return content.format(name)
+        return content.format(name, orig_name)
 
 
 class Git:
