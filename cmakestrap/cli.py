@@ -85,7 +85,7 @@ class CustomFormatter(logging.Formatter):
     RED = "\x1b[31;20m"
     BOLD_RED = "\x1b[31;1m"
     RESET = "\x1b[0m"
-    FMT = "%(asctime)s [{}-%(levelname).1s-{}] %(message)s"
+    FMT = f"{__package__}: %(asctime)s [{{}}-%(levelname).1s-{{}}] %(message)s"
 
     FORMATS = {
         logging.DEBUG: FMT.format(BLUE, RESET),
