@@ -8,7 +8,15 @@ class CMake:
     def __init__(self, version: str):
         self.version = version
 
-    def main(self, name: str, std: int, use_main: bool, includes: list[Path]) -> str:
+    def main(
+        self,
+        name: str,
+        orig_name: str,
+        std: int,
+        use_main: bool,
+        includes: list[Path],
+        description: str,
+    ) -> str:
         file = imp_resources.files(cmake) / "main.cmake.in"
         with file.open() as f:
             content = f.read()
@@ -21,9 +29,25 @@ class CMake:
             first = False
             includes_str += f"include({include})"
 
-        return content.format(self.version, name, includes_str, std, use_main and "main" or name)
+        return content.format(
+            self.version,
+            name,
+            orig_name,
+            includes_str,
+            std,
+            use_main and "main" or orig_name,
+            description,
+        )
 
-    def module(self, name: str, cpp_name: str, std: int, use_main: bool, includes: list[Path]) -> str:
+    def module(
+        self,
+        name: str,
+        orig_name: str,
+        std: int,
+        use_main: bool,
+        includes: list[Path],
+        description: str,
+    ) -> str:
         file = imp_resources.files(cmake) / "module.cmake.in"
         with file.open() as f:
             content = f.read()
@@ -36,13 +60,21 @@ class CMake:
             first = False
             includes_str += f"include({include})"
 
-        return content.format(self.version, name, cpp_name, includes_str, std, use_main and "main" or name)
+        return content.format(
+            self.version,
+            name,
+            orig_name,
+            includes_str,
+            std,
+            use_main and "main" or orig_name,
+            description,
+        )
 
-    def lib(self, name: str, cpp_name: str, description: str) -> str:
+    def lib(self, name: str, orig_name: str, std: int, description: str) -> str:
         file = imp_resources.files(cmake) / "lib.cmake.in"
         with file.open() as f:
             content = f.read()
-        return content.format(name, cpp_name, description)
+        return content.format(self.version, name, orig_name, std, description)
 
     def prelude(self) -> str:
         file = imp_resources.files(cmake) / "prelude.cmake.in"
@@ -74,8 +106,14 @@ class Cpp:
             content = f.read()
         return content.format(name)
 
-    def lib(self, name: str, orig_name: str, use_fmt: bool) -> str:
-        file = imp_resources.files(cpp) / ("lib.hpp.in" if use_fmt else "lib-no-fmt.hpp.in")
+    def lib_hpp(self, name: str) -> str:
+        file = imp_resources.files(cpp) / "lib.hpp.in"
+        with file.open() as f:
+            content = f.read()
+        return content.format(name)
+
+    def lib_cpp(self, name: str, orig_name: str, use_fmt: bool) -> str:
+        file = imp_resources.files(cpp) / ("lib.cpp.in" if use_fmt else "lib-no-fmt.cpp.in")
         with file.open() as f:
             content = f.read()
         return content.format(name, orig_name)

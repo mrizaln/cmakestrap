@@ -1,9 +1,14 @@
 cmake_minimum_required(VERSION {0})
-project({1} VERSION 0.1.0)
+project(
+  {2}
+  VERSION 0.1.0
+  LANGUAGES CXX
+  DESCRIPTION "{6}"
+)
 
-{2}
+{3}
 
-set(CMAKE_CXX_STANDARD {3})
+set(CMAKE_CXX_STANDARD {4})
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -11,13 +16,14 @@ find_package(fmt REQUIRED)
 
 # include(cmake/fetched-libs.cmake)
 
-add_library({1}-lib INTERFACE)
-target_link_libraries({1}-lib INTERFACE fmt::fmt)
+add_library({2}-lib STATIC src/{1}.cpp)
+target_include_directories({2}-lib PUBLIC include)
+target_link_libraries({2}-lib PUBLIC fmt::fmt)
 
-add_executable({4} src/main.cpp)
-target_include_directories({4} PRIVATE src)
-target_link_libraries({4} PRIVATE {1}-lib)
-target_compile_options({4} PRIVATE -Wall -Wextra -Wconversion)
+add_executable({5} src/main.cpp)
+target_include_directories({5} PRIVATE src)
+target_link_libraries({5} PRIVATE {2}-lib)
+target_compile_options({5} PRIVATE -Wall -Wextra -Wconversion)
 
 ## sanitizer
 ## may require installing additional library for the compiler

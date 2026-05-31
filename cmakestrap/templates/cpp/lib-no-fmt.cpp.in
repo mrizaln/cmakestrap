@@ -1,0 +1,11 @@
+#include "{0}/{0}.hpp"
+
+#include <iostream>
+
+namespace {0}
+{{
+    void hello()
+    {{
+        std::cout << "Hello from {1}!\n";
+    }}
+}}

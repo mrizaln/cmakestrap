@@ -1,0 +1,11 @@
+#include "{0}/{0}.hpp"
+
+#include <fmt/base.h>
+
+namespace {0}
+{{
+    void hello()
+    {{
+        fmt::println("Hello from {1}!");
+    }}
+}}

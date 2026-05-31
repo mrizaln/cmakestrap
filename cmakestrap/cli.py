@@ -26,6 +26,8 @@ BOOTSTRAP_GENERATE     = "cmake --preset conan-debug"
 BOOTSTRAP_GENERATE_NT  = "cmake --preset conan-default"
 BOOTSTRAP_LINK_COMP_DB = f"ln -sf {BOOTSTRAP_BINARY_DIR}/compile_commands.json ."
 BOOTSTRAP_COMPILE      = "cmake --build --preset conan-debug"
+BOOTSTRAP_GENERATE_LIB = f"cmake -S . -B {BOOTSTRAP_BINARY_DIR} -DCMAKE_BUILD_TYPE=Debug"
+BOOTSTRAP_COMPILE_LIB  = f"cmake --build {BOOTSTRAP_BINARY_DIR}"
 # fmt: on
 
 # see: https://cmake.org/cmake/help/latest/prop_tgt/CXX_STANDARD.html
@@ -64,7 +66,8 @@ class Log(Enum):
 @dataclass
 class Config:
     dir: Path
-    name: str
+    name_original: str  # where '-' are not replaced
+    name_safe: str  # whre '-' are replaced with '_'
     cpp_ver: int
     cmake_ver: str
     use_mold: bool
@@ -246,7 +249,8 @@ def get_args() -> Args:
 
     config = Config(
         dir=dir,
-        name=name,
+        name_original=name,
+        name_safe=name.replace("-", "_"),
         cpp_ver=std,
         cmake_ver=cmake_ver,
         use_mold=use_mold,
@@ -256,7 +260,7 @@ def get_args() -> Args:
     )
 
     should_configure = not (parsed.conan_only or parsed.cmake_only or parsed.bootstrap_only)
-    should_bootstrap = not parsed.no_bootstrap and not parsed.lib
+    should_bootstrap = not parsed.no_bootstrap
 
     if should_configure and should_bootstrap:
         operation = Operation.NORMAL_CONFIGURE
@@ -329,9 +333,9 @@ def run_timed(
 
 
 def configure_project(cfg: Config, project_kind: ProjectKind) -> bool:
-    logger.info(f"Configuring project '{cfg.name}'...")
+    logger.info(f"Configuring project '{cfg.name_original}'...")
 
-    configure_path(cfg.dir, project_kind)
+    configure_path(cfg, project_kind)
     configure_cpp(cfg, project_kind)
 
     if not configure_cmake(cfg, project_kind):
@@ -347,7 +351,10 @@ def configure_project(cfg: Config, project_kind: ProjectKind) -> bool:
     return True
 
 
-def configure_path(path: Path, project_kind: ProjectKind):
+def configure_path(cfg: Config, project_kind: ProjectKind):
+    path = cfg.dir
+    name = cfg.name_safe
+
     logger.info(f"Configuring path '{path}'...")
 
     if not path.exists():
@@ -358,7 +365,16 @@ def configure_path(path: Path, project_kind: ProjectKind):
         return
 
     match project_kind:
-        case ProjectKind.EXE | ProjectKind.MOD:
+        case ProjectKind.EXE:
+            source = path / "src"
+            source.mkdir(exist_ok=True)
+
+            include = path / "include" / name
+            include.mkdir(exist_ok=True, parents=True)
+
+            cmake_include_dir = path / "cmake"
+            cmake_include_dir.mkdir(exist_ok=True)
+        case ProjectKind.MOD:
             source = path / "src"
             source.mkdir(exist_ok=True)
 
@@ -366,8 +382,11 @@ def configure_path(path: Path, project_kind: ProjectKind):
             cmake_include_dir.mkdir(exist_ok=True)
 
         case ProjectKind.LIB:
-            include = path / "include"
-            include.mkdir(exist_ok=True)
+            source = path / "src"
+            source.mkdir(exist_ok=True)
+
+            include = path / "include" / name
+            include.mkdir(exist_ok=True, parents=True)
 
 
 def configure_cmake(cfg: Config, kind: ProjectKind) -> bool:
@@ -381,8 +400,14 @@ def configure_cmake(cfg: Config, kind: ProjectKind) -> bool:
 
     if kind == ProjectKind.LIB:
         cmake_main = cfg.dir / "CMakeLists.txt"
-        cpp_name = cfg.name.replace("-", "_")
-        write_tmpl(cmake_main, tmpl.lib, cfg.name, cpp_name, f"<{cfg.name} library description>")
+        write_tmpl(
+            cmake_main,
+            tmpl.lib,
+            name=cfg.name_safe,
+            orig_name=cfg.name_original,
+            std=cfg.cpp_ver,
+            description=f"<{cfg.name_original} library description>",
+        )
         return True
 
     cmake_dir = cfg.dir / "cmake"
@@ -396,8 +421,8 @@ def configure_cmake(cfg: Config, kind: ProjectKind) -> bool:
         includes.append(cmake_guard.relative_to(cfg.dir))
 
     # mold include
-    cmake_mold = cmake_dir / "mold.cmake"
     if cfg.use_mold:
+        cmake_mold = cmake_dir / "mold.cmake"
         if command_exists("mold"):
             if write_tmpl(cmake_mold, tmpl.mold):
                 includes.append(cmake_mold.relative_to(cfg.dir))
@@ -408,11 +433,26 @@ def configure_cmake(cfg: Config, kind: ProjectKind) -> bool:
     cmake_main = cfg.dir / "CMakeLists.txt"
     match kind:
         case ProjectKind.EXE:
-            write_tmpl(cmake_main, tmpl.main, cfg.name, cfg.cpp_ver, cfg.use_main, includes)
-        case ProjectKind.MOD:
-            cpp_name = cfg.name.replace("-", "_")
             write_tmpl(
-                cmake_main, tmpl.module, cfg.name, cpp_name, cfg.cpp_ver, cfg.use_main, includes
+                cmake_main,
+                tmpl.main,
+                name=cfg.name_safe,
+                orig_name=cfg.name_original,
+                std=cfg.cpp_ver,
+                use_main=cfg.use_main,
+                includes=includes,
+                description=f"<{cfg.name_original} program description>",
+            )
+        case ProjectKind.MOD:
+            write_tmpl(
+                cmake_main,
+                tmpl.module,
+                name=cfg.name_safe,
+                orig_name=cfg.name_original,
+                std=cfg.cpp_ver,
+                use_main=cfg.use_main,
+                includes=includes,
+                description=f"<{cfg.name_original} program description>",
             )
 
     # fetchcontent
@@ -433,31 +473,35 @@ def configure_conan(cfg: Config):
 def configure_cpp(cfg: Config, project_kind: ProjectKind):
     logger.info("Configuring C++ files...")
 
+    tmpl = templates.Cpp()
+    name = cfg.name_safe
+
     source = cfg.dir / "src"
-    include = cfg.dir / "include"
+    include = cfg.dir / "include" / name
 
     if project_kind == ProjectKind.LIB:
         assert include.exists(), "Include directory does not exist"
     else:
         assert source.exists(), "Source directory does not exist"
 
-    tmpl = templates.Cpp()
-    name = cfg.name.replace("-", "_")
-
     match project_kind:
         case ProjectKind.EXE:
-            lib = source / f"{name}.hpp"
-            write_tmpl(lib, tmpl.lib, name, cfg.name, True)
+            lib_hpp = include / f"{name}.hpp"
+            write_tmpl(lib_hpp, tmpl.lib_hpp, name=name)
+            lib_cpp = source / f"{name}.cpp"
+            write_tmpl(lib_cpp, tmpl.lib_cpp, name=name, orig_name=cfg.name_original, use_fmt=True)
             main = source / "main.cpp"
             write_tmpl(main, tmpl.main, name)
         case ProjectKind.MOD:
             lib = source / f"{name}.cxx"
-            write_tmpl(lib, tmpl.lib_mod, name, cfg.name)
+            write_tmpl(lib, tmpl.lib_mod, name=name, orig_name=cfg.name_original)
             main = source / "main.cxx"
             write_tmpl(main, tmpl.main_mod, name)
         case ProjectKind.LIB:
-            lib = include / f"{name}.hpp"
-            write_tmpl(lib, tmpl.lib, name, cfg.name, False)
+            lib_hpp = include / f"{name}.hpp"
+            write_tmpl(lib_hpp, tmpl.lib_hpp, name=name)
+            lib_cpp = source / f"{name}.cpp"
+            write_tmpl(lib_cpp, tmpl.lib_cpp, name=name, orig_name=cfg.name_original, use_fmt=False)
 
 
 def configure_git(cfg: Config):
@@ -488,30 +532,37 @@ def write_tmpl[**P](file: Path, tmpl_fn: Callable[P, str], *a: P.args, **k: P.kw
         return False
 
 
-def bootstrap_project(cfg: Config, is_modules: bool) -> Path | None:
+def bootstrap_project(cfg: Config, kind: ProjectKind) -> Path | None:
     cmake = cfg.dir / "CMakeLists.txt"
     if not cmake.exists():
         logger.error("CMakeLists.txt does not exist, cannot bootstrap")
         return None
 
-    conan = cfg.dir / "conanfile.py"
-    if not conan.exists():
-        logger.error("conanfile.py does not exist, cannot bootstrap")
-        return None
+    logger.info(f"Bootstrapping project '{cfg.name_original}'...")
 
-    logger.info(f"Bootstrapping project '{cfg.name}'...")
+    if kind == ProjectKind.LIB:
+        commands = (
+            (BOOTSTRAP_GENERATE_LIB.split(), False),
+            (BOOTSTRAP_LINK_COMP_DB.split(), False),
+            (BOOTSTRAP_COMPILE_LIB.split(), True),
+        )
+    else:
+        conan = cfg.dir / "conanfile.py"
+        if not conan.exists():
+            logger.error("conanfile.py does not exist, cannot bootstrap")
+            return None
 
-    install = BOOTSTRAP_INSTALL.split()
-    generate = (BOOTSTRAP_GENERATE_NT if IS_WINDOWS else BOOTSTRAP_GENERATE).split()
-    link_comp_db = BOOTSTRAP_LINK_COMP_DB.split()
-    compile = BOOTSTRAP_COMPILE.split()
+        commands = (
+            (BOOTSTRAP_INSTALL.split(), True),
+            ((BOOTSTRAP_GENERATE_NT if IS_WINDOWS else BOOTSTRAP_GENERATE).split(), False),
+            (BOOTSTRAP_LINK_COMP_DB.split(), False),
+            (BOOTSTRAP_COMPILE.split(), True),
+        )
 
-    commands = ((install, True), (generate, False), (link_comp_db, False), (compile, True))
-    env = (
-        os.environ
-        | {"CLICOLOR_FORCE": "1"}
-        | ({"CXX": "clang++", "CC": "clang"} if is_modules else {})
-    )
+    env = os.environ | {"CLICOLOR_FORCE": "1"}
+    if kind == ProjectKind.MOD:
+        env |= {"CXX": "clang++", "CC": "clang"}
+
     timeout = 3
 
     with chdir(cfg.dir):
@@ -521,7 +572,7 @@ def bootstrap_project(cfg: Config, is_modules: bool) -> Path | None:
                 return None
 
         logger.info("Bootstrap complete")
-        return cfg.dir / BOOTSTRAP_BINARY_DIR / ("main" if cfg.use_main else cfg.name)
+        return cfg.dir / BOOTSTRAP_BINARY_DIR / ("main" if cfg.use_main else cfg.name_original)
 
 
 def command_exists(command: str) -> bool:
@@ -572,22 +623,23 @@ def main() -> int:
     match args.operation:
         case Operation.NORMAL_CONFIGURE:
             if configure_project(args.config, args.kind):
-                if exe := bootstrap_project(args.config, args.kind == ProjectKind.MOD):
+                if exe := bootstrap_project(args.config, args.kind):
                     logger.info("Project configured successfully")
                     print(80 * "-")
-                    run(exe, check=True, capture_output=args.config.log == Log.QUIET)
+                    if args.kind != ProjectKind.LIB:
+                        run(exe, check=True, capture_output=args.config.log == Log.QUIET)
         case Operation.CONFIGURE_ONLY:
             configure_project(args.config, args.kind)
             logger.info("Project configured successfully")
         case Operation.BOOTSTRAP_ONLY:
-            if exe := bootstrap_project(args.config, args.kind == ProjectKind.MOD):
+            if exe := bootstrap_project(args.config, args.kind):
                 print(80 * "-")
                 run(exe, check=True, capture_output=args.config.log == Log.QUIET)
         case Operation.CMAKE_ONLY:
-            configure_path(args.config.dir, args.kind)
+            configure_path(args.config, args.kind)
             configure_cmake(args.config, args.kind)
         case Operation.CONAN_ONLY:
-            configure_path(args.config.dir, args.kind)
+            configure_path(args.config, args.kind)
             configure_conan(args.config)
 
     return 0

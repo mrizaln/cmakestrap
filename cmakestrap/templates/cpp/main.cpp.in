@@ -1,4 +1,4 @@
-#include "{0}.hpp"
+#include "{0}/{0}.hpp"
 
 int main()
 {{
