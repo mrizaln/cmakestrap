@@ -128,7 +128,13 @@ def get_args() -> Args:
 
     add("dir", help="Directory to initialize (can be empty or non-existent)")
     add("--name", help="Project name, defaults to directory name if omitted")
-    add("--std", help="C++ standard to be used, default: 20", type=int, default=20)
+    add(
+        "--std",
+        help="C++ standard to be used, default: 20",
+        type=int,
+        default=20,
+        choices=CPP_STD_TO_CMAKE_VER.keys(),
+    )
     add("--main", help="Use main as the executable name (exe/mod mode)", action="store_true")
 
     kind = args.add_mutually_exclusive_group()
@@ -217,6 +223,11 @@ def get_args() -> Args:
         logger.error(f"Supported versions: {list(CPP_STD_TO_CMAKE_VER.keys())}")
         exit(1)
 
+    if not cmake_available_for_std(std):
+        ver = CPP_STD_TO_CMAKE_VER[std]
+        logger.fatal(f"cmake version doesn't meet requirement for c++ {std}: {ver}")
+        exit(1)
+
     if dir.exists() and not dir.is_dir():
         logger.error(f"'{dir}' is not a directory!")
         exit(1)
@@ -274,7 +285,7 @@ def run_timed(
             run(args, env=env, capture_output=False, check=True)
             return True
         except CalledProcessError as e:
-            logger.error(f"Failed to run command [{' '.join(args)}]: \n{e}")
+            logger.error(f"Failed to run command [{' '.join(args)}]: {e}")
             logger.error(f"Last command stdout: \n{e.stdout.decode() if not None else ''}")
             logger.error(f"Last command stderr: \n{e.stderr.decode() if not None else ''}")
             return False
@@ -288,7 +299,7 @@ def run_timed(
 
         stdout = cmd.stdout.read() if cmd.stdout else ""
         stderr = cmd.stderr.read() if cmd.stderr else ""
-        logger.error(f"Failed to run command [{' '.join(args)}]: \n non-zero return: {ret}")
+        logger.error(f"Failed to run command [{' '.join(args)}]: non-zero return: {ret}")
         logger.error(f"Last command stdout: \n{stdout}")
         logger.error(f"Last command stderr: \n{stderr}")
         return False
@@ -518,6 +529,34 @@ def command_exists(command: str) -> bool:
         return True
     except CalledProcessError:
         return False
+
+
+def cmake_available_for_std(std: int) -> bool:
+    try:
+        min = str(CPP_STD_TO_CMAKE_VER[std])
+        min_ver = min.strip().split(".")
+        min_ver.extend(["0"] * (2 - len(min_ver))) if len(min_ver) < 2 else min_ver[:2]
+        min_ver = [int(s) for s in min_ver]
+
+        # example output: "cmake version <major>.<minor>.<patch>"
+        target = run(["cmake", "--version"], stdout=PIPE, check=True, text=True)
+        target_ver = target.stdout.split("\n")[0].split(" ")[2]
+        logger.info(f"current cmake version: {target_ver}")
+
+        target_ver = target_ver.split(".")
+        target_ver = [int(s) for s in target_ver]
+
+        if len(target_ver) < 2:
+            return False
+
+        for v1, v2 in zip(min_ver[:2], target_ver[:2]):
+            if v1 > v2:
+                return False
+    except Exception as e:
+        logger.error(f"failed to query cmake version: {e}")
+        return False
+
+    return True
 
 
 def main() -> int:
