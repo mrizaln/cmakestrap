@@ -1,7 +1,7 @@
-#include "{0}/{0}.hpp"
+#include "${project_name_safe}/${project_name_safe}.hpp"
 
 int main()
-{{
-    {0}::hello();
+{
+    ${project_name_safe}::hello();
     return 0;
-}}
+}

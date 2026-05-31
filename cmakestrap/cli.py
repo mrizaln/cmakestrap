@@ -30,6 +30,8 @@ BOOTSTRAP_GENERATE_LIB = f"cmake -S . -B {BOOTSTRAP_BINARY_DIR} -DCMAKE_BUILD_TY
 BOOTSTRAP_COMPILE_LIB  = f"cmake --build {BOOTSTRAP_BINARY_DIR}"
 # fmt: on
 
+CONAN_FMT_VERSION = "12.1.0"
+
 # see: https://cmake.org/cmake/help/latest/prop_tgt/CXX_STANDARD.html
 CPP_STD_TO_CMAKE_VER = {
     20: "3.16",
@@ -403,8 +405,8 @@ def configure_cmake(cfg: Config, kind: ProjectKind) -> bool:
         write_tmpl(
             cmake_main,
             tmpl.lib,
-            name=cfg.name_safe,
-            orig_name=cfg.name_original,
+            name_original=cfg.name_original,
+            name_safe=cfg.name_safe,
             std=cfg.cpp_ver,
             description=f"<{cfg.name_original} library description>",
         )
@@ -436,8 +438,8 @@ def configure_cmake(cfg: Config, kind: ProjectKind) -> bool:
             write_tmpl(
                 cmake_main,
                 tmpl.main,
-                name=cfg.name_safe,
-                orig_name=cfg.name_original,
+                name_original=cfg.name_original,
+                name_safe=cfg.name_safe,
                 std=cfg.cpp_ver,
                 use_main=cfg.use_main,
                 includes=includes,
@@ -447,8 +449,8 @@ def configure_cmake(cfg: Config, kind: ProjectKind) -> bool:
             write_tmpl(
                 cmake_main,
                 tmpl.module,
-                name=cfg.name_safe,
-                orig_name=cfg.name_original,
+                name_original=cfg.name_original,
+                name_safe=cfg.name_safe,
                 std=cfg.cpp_ver,
                 use_main=cfg.use_main,
                 includes=includes,
@@ -467,7 +469,7 @@ def configure_conan(cfg: Config):
 
     conanfile = cfg.dir / "conanfile.py"
     tmpl = templates.Conan()
-    write_tmpl(conanfile, tmpl.conanfile)
+    write_tmpl(conanfile, tmpl.conanfile, fmt_version=CONAN_FMT_VERSION)
 
 
 def configure_cpp(cfg: Config, project_kind: ProjectKind):
@@ -475,6 +477,7 @@ def configure_cpp(cfg: Config, project_kind: ProjectKind):
 
     tmpl = templates.Cpp()
     name = cfg.name_safe
+    original = cfg.name_original
 
     source = cfg.dir / "src"
     include = cfg.dir / "include" / name
@@ -487,21 +490,21 @@ def configure_cpp(cfg: Config, project_kind: ProjectKind):
     match project_kind:
         case ProjectKind.EXE:
             lib_hpp = include / f"{name}.hpp"
-            write_tmpl(lib_hpp, tmpl.lib_hpp, name=name)
+            write_tmpl(lib_hpp, tmpl.lib_hpp, name_safe=name)
             lib_cpp = source / f"{name}.cpp"
-            write_tmpl(lib_cpp, tmpl.lib_cpp, name=name, orig_name=cfg.name_original, use_fmt=True)
+            write_tmpl(lib_cpp, tmpl.lib_cpp, name_original=original, name_safe=name, use_fmt=True)
             main = source / "main.cpp"
             write_tmpl(main, tmpl.main, name)
         case ProjectKind.MOD:
             lib = source / f"{name}.cxx"
-            write_tmpl(lib, tmpl.lib_mod, name=name, orig_name=cfg.name_original)
+            write_tmpl(lib, tmpl.lib_mod, name_original=original, name_safe=name)
             main = source / "main.cxx"
             write_tmpl(main, tmpl.main_mod, name)
         case ProjectKind.LIB:
             lib_hpp = include / f"{name}.hpp"
-            write_tmpl(lib_hpp, tmpl.lib_hpp, name=name)
+            write_tmpl(lib_hpp, tmpl.lib_hpp, name_safe=name)
             lib_cpp = source / f"{name}.cpp"
-            write_tmpl(lib_cpp, tmpl.lib_cpp, name=name, orig_name=cfg.name_original, use_fmt=False)
+            write_tmpl(lib_cpp, tmpl.lib_cpp, name_original=original, name_safe=name, use_fmt=False)
 
 
 def configure_git(cfg: Config):

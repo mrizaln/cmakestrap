@@ -3,12 +3,12 @@ module;
 // unfortunately conan doesn't support modules yet, so we need to use global module fragment
 #include <fmt/base.h>
 
-export module {0};
+export module ${project_name_safe};
 
-export namespace {0}
-{{
+export namespace ${project_name_safe}
+{
     inline void hello()
-    {{
-        fmt::println("Hello from {1}!");
-    }}
-}}
+    {
+        fmt::println("Hello from ${project_name}!");
+    }
+}

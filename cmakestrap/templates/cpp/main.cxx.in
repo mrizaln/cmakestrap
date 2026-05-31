@@ -1,7 +1,7 @@
-import {0};
+import ${project_name_safe};
 
 int main()
-{{
-    {0}::hello();
+{
+    ${project_name_safe}::hello();
     return 0;
-}}
+}

@@ -1,11 +1,11 @@
-#include "{0}/{0}.hpp"
+#include "${project_name_safe}/${project_name_safe}.hpp"
 
 #include <iostream>
 
-namespace {0}
-{{
+namespace ${project_name_safe}
+{
     void hello()
-    {{
-        std::cout << "Hello from {1}!\n";
-    }}
-}}
+    {
+        std::cout << "Hello from ${project_name}!\n";
+    }
+}

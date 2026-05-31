@@ -1,4 +1,4 @@
-namespace {0}
-{{
+namespace ${project_name_safe}
+{
     void hello();
-}}
+}

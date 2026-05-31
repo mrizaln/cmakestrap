@@ -1,13 +1,13 @@
-cmake_minimum_required(VERSION {0})
+cmake_minimum_required(VERSION ${cmake_version})
 
 project(
-  {2}
+  ${project_name}
   VERSION 0.1.0
   LANGUAGES CXX
-  DESCRIPTION "{4}"
+  DESCRIPTION "${description}"
 )
 
-add_library({2} STATIC src/{1}.cpp)
-target_include_directories({2} PUBLIC include)
-target_compile_features({2} PUBLIC cxx_std_{3})
-set_target_properties({2} PROPERTIES CXX_EXTENSIONS OFF)
+add_library(${project_name} STATIC src/${project_name_safe}.cpp)
+target_include_directories(${project_name} PUBLIC include)
+target_compile_features(${project_name} PUBLIC cxx_std_${cpp_standard})
+set_target_properties(${project_name} PROPERTIES CXX_EXTENSIONS OFF)

@@ -1,5 +1,6 @@
 from importlib import resources as imp_resources
 from pathlib import Path
+from string import Template
 
 from . import cmake, conan, cpp, git
 
@@ -10,8 +11,8 @@ class CMake:
 
     def main(
         self,
-        name: str,
-        orig_name: str,
+        name_original: str,
+        name_safe: str,
         std: int,
         use_main: bool,
         includes: list[Path],
@@ -19,30 +20,22 @@ class CMake:
     ) -> str:
         file = imp_resources.files(cmake) / "main.cmake.in"
         with file.open() as f:
-            content = f.read()
-
-        includes_str = ""
-        first = True
-        for include in includes:
-            if not first:
-                includes_str += "\n"
-            first = False
-            includes_str += f"include({include})"
-
-        return content.format(
-            self.version,
-            name,
-            orig_name,
-            includes_str,
-            std,
-            use_main and "main" or orig_name,
-            description,
-        )
+            template = Template(f.read())
+            mapping = {
+                "cmake_version": self.version,
+                "project_name": name_original,
+                "project_name_safe": name_safe,
+                "executable_name": use_main and "main" or name_original,
+                "cpp_standard": std,
+                "description": description,
+                "includes": "\n".join(f"include({include})" for include in includes),
+            }
+            return template.substitute(mapping)
 
     def module(
         self,
-        name: str,
-        orig_name: str,
+        name_original: str,
+        name_safe: str,
         std: int,
         use_main: bool,
         includes: list[Path],
@@ -50,31 +43,30 @@ class CMake:
     ) -> str:
         file = imp_resources.files(cmake) / "module.cmake.in"
         with file.open() as f:
-            content = f.read()
+            template = Template(f.read())
+            mapping = {
+                "cmake_version": self.version,
+                "project_name": name_original,
+                "project_name_safe": name_safe,
+                "executable_name": use_main and "main" or name_original,
+                "cpp_standard": std,
+                "description": description,
+                "includes": "\n".join(f"include({include})" for include in includes),
+            }
+            return template.substitute(mapping)
 
-        includes_str = ""
-        first = True
-        for include in includes:
-            if not first:
-                includes_str += "\n"
-            first = False
-            includes_str += f"include({include})"
-
-        return content.format(
-            self.version,
-            name,
-            orig_name,
-            includes_str,
-            std,
-            use_main and "main" or orig_name,
-            description,
-        )
-
-    def lib(self, name: str, orig_name: str, std: int, description: str) -> str:
+    def lib(self, name_original: str, name_safe: str, std: int, description: str) -> str:
         file = imp_resources.files(cmake) / "lib.cmake.in"
         with file.open() as f:
-            content = f.read()
-        return content.format(self.version, name, orig_name, std, description)
+            template = Template(f.read())
+            mapping = {
+                "cmake_version": self.version,
+                "project_name": name_original,
+                "project_name_safe": name_safe,
+                "cpp_standard": std,
+                "description": description,
+            }
+            return template.substitute(mapping)
 
     def prelude(self) -> str:
         file = imp_resources.files(cmake) / "prelude.cmake.in"
@@ -93,42 +85,51 @@ class CMake:
 
 
 class Conan:
-    def conanfile(self) -> str:
+    def conanfile(self, fmt_version: str) -> str:
         file = imp_resources.files(conan) / "conanfile.py.in"
         with file.open() as f:
-            return f.read()
+            template = Template(f.read())
+            return template.substitute({"fmt_version": fmt_version})
 
 
 class Cpp:
-    def main(self, name: str) -> str:
+    def main(self, name_safe: str) -> str:
         file = imp_resources.files(cpp) / "main.cpp.in"
         with file.open() as f:
-            content = f.read()
-        return content.format(name)
+            template = Template(f.read())
+            return template.substitute({"project_name_safe": name_safe})
 
-    def lib_hpp(self, name: str) -> str:
+    def lib_hpp(self, name_safe: str) -> str:
         file = imp_resources.files(cpp) / "lib.hpp.in"
         with file.open() as f:
-            content = f.read()
-        return content.format(name)
+            template = Template(f.read())
+            return template.substitute({"project_name_safe": name_safe})
 
-    def lib_cpp(self, name: str, orig_name: str, use_fmt: bool) -> str:
+    def lib_cpp(self, name_original: str, name_safe: str, use_fmt: bool) -> str:
         file = imp_resources.files(cpp) / ("lib.cpp.in" if use_fmt else "lib-no-fmt.cpp.in")
         with file.open() as f:
-            content = f.read()
-        return content.format(name, orig_name)
+            template = Template(f.read())
+            mapping = {
+                "project_name": name_original,
+                "project_name_safe": name_safe,
+            }
+            return template.substitute(mapping)
 
-    def main_mod(self, name: str) -> str:
+    def main_mod(self, name_safe: str) -> str:
         file = imp_resources.files(cpp) / "main.cxx.in"
         with file.open() as f:
-            content = f.read()
-        return content.format(name)
+            template = Template(f.read())
+            return template.substitute({"project_name_safe": name_safe})
 
-    def lib_mod(self, name: str, orig_name) -> str:
+    def lib_mod(self, name_original: str, name_safe) -> str:
         file = imp_resources.files(cpp) / "lib.cxx.in"
         with file.open() as f:
-            content = f.read()
-        return content.format(name, orig_name)
+            template = Template(f.read())
+            mapping = {
+                "project_name": name_original,
+                "project_name_safe": name_safe,
+            }
+            return template.substitute(mapping)
 
 
 class Git:
