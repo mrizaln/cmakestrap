@@ -28,9 +28,11 @@ BOOTSTRAP_LINK_COMP_DB = f"ln -sf {BOOTSTRAP_BINARY_DIR}/compile_commands.json .
 BOOTSTRAP_COMPILE      = "cmake --build --preset conan-debug"
 # fmt: on
 
+# see: https://cmake.org/cmake/help/latest/prop_tgt/CXX_STANDARD.html
 CPP_STD_TO_CMAKE_VER = {
     20: "3.16",
     23: "3.22",
+    26: "3.25",
 }
 
 CMAKE_VER_WITH_MODULES = "3.28"
