@@ -29,4 +29,4 @@ python3 -m cmakestrap --main --std 23 --git "/tmp/program-23-exe"
 python3 -m cmakestrap --main --std 23 --git "/tmp/program-23-mod" --mod
 python3 -m cmakestrap --main --std 23 --git "/tmp/program-23-lib" --lib
 
-# rm -rf /tmp/something-??-??? /tmp/idk-??-??? /tmp/program-??-???
+rm -rf /tmp/something-??-??? /tmp/idk-??-??? /tmp/program-??-???
