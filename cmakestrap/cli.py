@@ -606,6 +606,8 @@ def cmake_available_for_std(std: int) -> bool:
             return False
 
         for v1, v2 in zip(min_ver[:2], target_ver[:2]):
+            if v1 < v2:
+                return True
             if v1 > v2:
                 return False
     except Exception as e:
